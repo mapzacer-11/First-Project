@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Store Manager Dashboard (Firebase)</title>
+
+  <!-- Firebase (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    body { font-family: "Segoe UI", sans-serif; background: #f4f7fb; margin: 0; padding: 20px; }
+    header {
+      background: linear-gradient(to right, #1e3c72, #2a5298);
+      color: white; padding: 15px 30px; border-radius: 10px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1.5rem; }
+    header button { background: white; color: #1e3c72; border: none; border-radius: 8px;
+      padding: 8px 15px; cursor: pointer; font-weight: bold; margin-left:8px; }
+    main { margin-top: 25px; }
+    .form-box, .sell-box {
+      background: white; padding: 20px; border-radius: 10px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.1); max-width: 700px; margin-bottom: 25px;
+    }
+    .form-box h2, .sell-box h2 { margin-bottom: 15px; color: #2a5298; }
+    .form-box input, .form-box select, .sell-box input, .sell-box select {
+      width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 8px;
+    }
+    .form-box button {
+      background: #2a5298; color: white; border: none; border-radius: 8px;
+      padding: 10px 15px; cursor: pointer; font-weight: bold; margin-top: 8px;
+    }
+    table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background: #1e3c72; color: white; }
+    tr:hover { background: #f1f1f1; }
+    tr.out-of-stock { background: #ffe6e6; color: #c0392b; font-weight: bold; }
+    tr.low-stock { background: #fff9e6; color: #b8860b; font-weight: bold; }
+    .actions button {
+      background: #2a5298; color: white; border: none; border-radius: 6px; padding: 5px 10px; margin-right: 5px; cursor: pointer;
+    }
+    .actions button.delete { background: #c0392b; }
+    .actions button.sell { background: #28a745; } /* green sell */
+    .summary {
+      margin-top: 20px; background: white; padding: 15px; border-radius: 10px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.1); font-weight: bold;
+    }
+    .small { font-size: 0.9rem; color:#555; }
+    @media (max-width: 820px) {
+      .form-box, .sell-box { max-width: 100%; padding: 15px; }
+      table th, table td { padding: 8px; }
+    }
+    .sync-note { font-size:0.85rem; color:#666; margin-top:8px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🛒 Store Manager Dashboard </h1>
+  <div>
+    <button onclick="location.href='dashboard_admin.html'">Open Admin View</button>
+    <button onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<main>
+  <!-- Add / Update item -->
+  <section class="form-box">
+    <h2>Add / Update Item</h2>
+    <input type="hidden" id="editId">
+    <input type="text" id="itemName" placeholder="Item Name" required>
+    <select id="itemCategory">
+      <option value="Food">Food</option>
+      <option value="Drinks">Drinks</option>
+      <option value="Stationery">Stationery</option>
+      <option value="Others">Others</option>
+    </select>
+    <input type="number" id="itemQty" placeholder="Quantity" required>
+    <input type="number" id="itemPrice" placeholder="Price (₹)" required>
+    <button id="saveBtn">Save Item</button>
+    <p class="small">Tip: To update an item, click its "Edit" button below, change values and Save.</p>
+    <p class="sync-note" id="syncNote">Realtime: connected to Firestore</p>
+  </section>
+
+  <!-- Inventory Table -->
+  <section>
+    <div style="margin-bottom:10px;">
+      <label>Filter by Category:</label>
+      <select id="filterCategory" onchange="renderTable()">
+        <option value="All">All</option>
+        <option value="Food">Food</option>
+        <option value="Drinks">Drinks</option>
+        <option value="Stationery">Stationery</option>
+        <option value="Others">Others</option>
+      </select>
+    </div>
+    <table id="itemTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Item Name</th>
+          <th>Category</th>
+          <th>Quantity</th>
+          <th>Price (₹)</th>
+          <th>Total Value (₹)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <div class="summary" id="summaryBox">Total items: 0 | Total stock value: ₹0</div>
+</main>
+
+<script>
+/* =========================
+   Firestore initialization
+   =========================
+   Replace the firebaseConfig below with your project config if needed.
+   I used the config you provided earlier.
+*/
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA9vga7dic8_gCqiWoT8l1ds2ONe8mGf6U",
+  authDomain: "store-manager-11.firebaseapp.com",
+  projectId: "store-manager-11",
+  storageBucket: "store-manager-11.firebasestorage.app",
+  messagingSenderId: "527705024026",
+  appId: "1:527705024026:web:25876af126ba42bef0d3a3"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* Collection refs */
+const itemsCol = db.collection('items');
+const salesCol = db.collection('sales');
+const histCol = db.collection('history');
+
+/* Local cache (kept in-sync by snapshot) */
+let items = []; // each: { id, name, category, qty, price }
+let history = [];
+let sales = [];
+
+/* DOM refs */
+const itemName = document.getElementById('itemName'),
+      itemCategory = document.getElementById('itemCategory'),
+      itemQty = document.getElementById('itemQty'),
+      itemPrice = document.getElementById('itemPrice'),
+      editIdEl = document.getElementById('editId'),
+      saveBtn = document.getElementById('saveBtn');
+
+/* --------------------------
+   Real-time listeners
+   -------------------------- */
+function startRealtimeListeners(){
+  // Items: ordered by name
+  itemsCol.orderBy('name').onSnapshot(snapshot => {
+    items = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      items.push({
+        id: doc.id,
+        name: data.name,
+        category: data.category,
+        qty: Number(data.qty),
+        price: Number(data.price)
+      });
+    });
+    renderTable();
+  }, err => {
+    console.error('items snapshot error', err);
+    document.getElementById('syncNote').textContent = 'Realtime: disconnected (check console)';
+  });
+
+  // History (most recent first)
+  histCol.orderBy('timestamp','desc').limit(100).onSnapshot(snapshot => {
+    history = [];
+    snapshot.forEach(doc => history.push({ id: doc.id, text: doc.data().text, ts: doc.data().timestamp }));
+    // not displayed here (admin shows history). We still store it.
+  });
+
+  // Sales (recent)
+  salesCol.orderBy('date','desc').limit(200).onSnapshot(snapshot => {
+    sales = [];
+    snapshot.forEach(doc => sales.push({ id: doc.id, ...doc.data() }));
+  });
+}
+
+/* --------------------------
+   Helper: write history entry
+   -------------------------- */
+async function saveHistory(actionText){
+  try {
+    await histCol.add({
+      text: `${new Date().toLocaleString()} — ${actionText}`,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e){
+    console.warn('history add failed', e);
+  }
+}
+
+/* --------------------------
+   Render table & summary
+   -------------------------- */
+function renderTable(){
+  const tbody = document.querySelector('#itemTable tbody');
+  const filter = document.getElementById('filterCategory').value;
+  tbody.innerHTML = '';
+  let totalValue = 0;
+  let count = 0;
+
+  items.forEach((item, index) => {
+    if (filter !== 'All' && item.category !== filter) return;
+    const total = Number(item.qty) * Number(item.price);
+    totalValue += total; count++;
+
+    const row = document.createElement('tr');
+    if (Number(item.qty) === 0) row.classList.add('out-of-stock');
+    else if (Number(item.qty) < 5) row.classList.add('low-stock');
+
+    row.innerHTML = `
+      <td>${index + 1}</td>
+      <td>${item.name}</td>
+      <td>${item.category}</td>
+      <td>${item.qty}</td>
+      <td>${item.price}</td>
+      <td>${total.toFixed(2)}</td>
+      <td class="actions">
+        <button onclick="editItem('${item.id}')">Edit</button>
+        <button class="sell" onclick="sellAt('${item.id}')">Sell</button>
+        <button class="delete" onclick="deleteItem('${item.id}')">Delete</button>
+      </td>`;
+    tbody.appendChild(row);
+  });
+
+  document.getElementById('summaryBox').textContent =
+    `Total items: ${count} | Total stock value: ₹${totalValue.toFixed(2)}`;
+}
+
+/* --------------------------
+   Save item (add or update)
+   -------------------------- */
+saveBtn.addEventListener('click', async () => {
+  const name = itemName.value.trim();
+  const category = itemCategory.value;
+  const qty = parseInt(itemQty.value);
+  const price = parseFloat(itemPrice.value);
+  const editId = editIdEl.value;
+
+  if (!name || isNaN(qty) || isNaN(price)) return alert("Please fill all fields correctly.");
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = editId ? 'Updating...' : 'Saving...';
+
+  try {
+    if (!editId) {
+      // add new item
+      await itemsCol.add({ name, category, qty, price });
+      await saveHistory(`Added: ${name}`);
+    } else {
+      // update item
+      await itemsCol.doc(editId).update({ name, category, qty, price });
+      await saveHistory(`Updated: ${name}`);
+      editIdEl.value = '';
+    }
+    clearForm();
+  } catch (e){
+    console.error('saveItem error', e);
+    alert('Failed to save item. See console.');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Item';
+  }
+});
+
+/* --------------------------
+   Edit item: load data into form
+   -------------------------- */
+function editItem(docId){
+  const doc = items.find(it => it.id === docId);
+  if (!doc) return alert('Item not found');
+  itemName.value = doc.name;
+  itemCategory.value = doc.category;
+  itemQty.value = doc.qty;
+  itemPrice.value = doc.price;
+  editIdEl.value = docId;
+}
+
+/* --------------------------
+   Delete item
+   -------------------------- */
+async function deleteItem(docId){
+  if (!confirm('Delete this item?')) return;
+  try {
+    const it = items.find(i => i.id === docId);
+    await itemsCol.doc(docId).delete();
+    await saveHistory(`Deleted: ${it ? it.name : docId}`);
+  } catch (e){
+    console.error('deleteItem error', e);
+    alert('Failed to delete item. See console.');
+  }
+}
+
+/* --------------------------
+   Sell item (transactional)
+   -------------------------- */
+async function sellAt(docId){
+  const docRef = itemsCol.doc(docId);
+  try {
+    // get current doc once to show available qty
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) return alert('Item not found');
+
+    const data = docSnap.data();
+    const available = Number(data.qty || 0);
+    const qtyStr = prompt(`Sell how many of "${data.name}"? (Available: ${available})`, "1");
+    if (qtyStr === null) return;
+    const sellQty = parseInt(qtyStr);
+    if (isNaN(sellQty) || sellQty <= 0) return alert('Enter a valid positive quantity.');
+    if (sellQty > available) return alert('Not enough stock available.');
+
+    const note = prompt("Optional note (invoice / customer / remark):", "") || "";
+
+    // run transaction to decrease qty safely
+    await db.runTransaction(async (t) => {
+      const d = await t.get(docRef);
+      if (!d.exists) throw "Item removed";
+      const currQty = Number(d.data().qty || 0);
+      if (sellQty > currQty) throw "Not enough stock";
+      t.update(docRef, { qty: currQty - sellQty });
+    });
+
+    // add sale record
+    const price = Number(data.price || 0);
+    const total = sellQty * price;
+    await salesCol.add({
+      itemName: data.name,
+      qty: sellQty,
+      price,
+      total: Number(total.toFixed(2)),
+      date: new Date().toISOString(),
+      note
+    });
+
+    // history
+    await saveHistory(`Sold: ${data.name} x${sellQty} (₹${total.toFixed(2)})`);
+
+    alert(`Sale recorded: ${data.name} x${sellQty} — ₹${total.toFixed(2)}`);
+  } catch (e){
+    console.error('sellAt error', e);
+    alert('Sale failed. See console.');
+  }
+}
+
+/* --------------------------
+   Utility: clear form
+   -------------------------- */
+function clearForm(){
+  itemName.value = '';
+  itemQty.value = '';
+  itemPrice.value = '';
+  editIdEl.value = '';
+}
+
+/* --------------------------
+   Logout (back to index)
+   -------------------------- */
+function logout(){
+  location.href = 'index.html';
+}
+
+/* --------------------------
+   Init realtime
+   -------------------------- */
+startRealtimeListeners();
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Role Based Login — Manager / Admin</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Loading animation styles */
+    #loadingScreen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      background: #0b3d91;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      letter-spacing: 1px;
+      font-family: poppins, sans-serif;
+      z-index: 9999;
+      animation: fadeOut 1s ease 1.5s forwards;
+    }
+
+    @keyframes fadeOut {
+      to {
+        opacity: 0;
+        visibility: hidden;
+      }
+    }
+
+    .loading-dots::after {
+      content: '';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+
+    @keyframes dots {
+      0%, 20% { content: ''; }
+      40% { content: '.'; }
+      60% { content: '..'; }
+      80%, 100% { content: '...'; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Splash / Loading Screen -->
+<div id="splashScreen">
+  <div class="splash-content">
+   
+    <h1 class="splash-title">Store Manager</h1>
+  </div>
+</div>
+
+<style>
+  /* Fullscreen splash */
+  #splashScreen {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    animation: fadeOut 1s ease 2.3s forwards;
+  }
+
+  /* Content box */
+  .splash-content {
+    text-align: center;
+    animation: fadeIn 1.2s ease-out;
+  }
+
+  /* App title */
+  .splash-title {
+    margin-top: 18px;
+    font-size: 34px;
+    color: white;
+    letter-spacing: 1px;
+    font-family: Segoe UI, sans-serif;
+    animation: titleFade 1.6s ease-out;
+  }
+
+  /* Animations */
+  @keyframes fadeOut {
+    to { opacity: 0; visibility: hidden; }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes logoZoom {
+    0%   { transform: scale(0.7); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes titleFade {
+    0%   { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+</style>
+
+<script>
+  document.body.style.overflow = "hidden";
+  setTimeout(() => {
+    document.body.style.overflow = "auto";
+  }, 2400);
+</script>
+
+
+
+<div class="wrapper" id="formWrapper">
+  <!-- Login Form (left) -->
+  <div class="form-container login">
+    <h2>Login</h2>
+    <form id="loginForm" autocomplete="off">
+      <input type="text" id="username" placeholder="Username or email..." required />
+      <div class="password-row">
+        <input type="password" id="password" placeholder="Password" required />
+        <button type="button" id="togglePwd" class="pwd-toggle" aria-label="toggle password">👁</button>
+      </div>
+
+      <div class="role-select">
+        <label><input type="radio" name="role" value="manager" checked /> Manager</label>
+        <label><input type="radio" name="role" value="admin" /> Admin (view-only)</label>
+      </div>
+
+      <div class="forgot-password" tabindex="0">Forgot password?</div>
+
+      <button type="submit" class="submit-btn">Login</button>
+
+      <div id="message" role="status" aria-live="polite"></div>
+    </form>
+  </div>
+
+  <!-- Welcome Panel -->
+  <div class="form-container signin">
+    <h2>Welcome to Store Manager</h2>
+    <p style="margin:15px 0;color:#555;">Manage your supermarket efficiently.<br>Track stock, updates, and reports easily.</p>
+    <button type="button" class="submit-btn" id="letsGoBtn">Let's Go to Login</button>
+  </div>
+
+  <!-- Blue Toggle -->
+  <div class="toggle-container">
+    <h2 id="toggleHeading">Hello, Manager!</h2>
+    <p id="toggleText">Welcome to your store management system.</p>
+    <button class="switch-btn" id="toggleBtn">Let's Go</button>
+  </div>
+</div>
+
+<script>
+
+/* --- Role-based login logic --- */
+const wrapper = document.getElementById('formWrapper');
+const toggleBtn = document.getElementById('toggleBtn');
+const letsGoBtn = document.getElementById('letsGoBtn');
+const toggleHeading = document.getElementById('toggleHeading');
+const toggleText = document.getElementById('toggleText');
+
+toggleBtn.addEventListener('click', () => {
+  wrapper.classList.toggle('active');
+
+  if(wrapper.classList.contains('active')){
+    toggleHeading.textContent = "Welcome Back!";
+    toggleText.textContent = "Login to continue managing your store.";
+    toggleBtn.textContent = "Back";
+  } else {
+    toggleHeading.textContent = "Hello, Manager!";
+    toggleText.textContent = "Welcome to your store management system.";
+    toggleBtn.textContent = "Let's Go";
+  }
+});
+
+letsGoBtn.addEventListener('click', () => {
+  wrapper.classList.remove('active');
+});
+
+const loginForm = document.getElementById('loginForm');
+const message = document.getElementById('message');
+const togglePwd = document.getElementById('togglePwd');
+const pwdInput = document.getElementById('password');
+
+togglePwd.addEventListener('click', () => {
+  pwdInput.type = pwdInput.type === 'password' ? 'text' : 'password';
+});
+
+const CREDENTIALS = {
+  manager: 'mehfazemap',
+  admin: 'adminviewonly'
+};
+
+loginForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  message.textContent = '';
+  const username = document.getElementById('username').value.trim();
+  const password = pwdInput.value;
+  const role = document.querySelector('input[name="role"]:checked').value;
+
+  if(!username || !password){
+    message.textContent = 'Please enter username and password.';
+    message.className = 'msg error';
+    return;
+  }
+
+  if(password === CREDENTIALS[role]){
+    message.textContent = `Login successful as ${role}. Redirecting... `;
+    message.className = 'msg success';
+    setTimeout(() => {
+      if(role === 'manager'){
+        window.location.href = 'dashboard_manager.html';
+      } else {
+        window.location.href = 'dashboard_admin.html';
+      }
+    }, 700);
+  } else {
+    message.textContent = 'Invalid password for the selected role.';
+    message.className = 'msg error';
+  }
+});
+
+document.querySelector('.forgot-password').addEventListener('click', () => {
+  const role = document.querySelector('input[name="role"]:checked').value;
+  if(role === 'manager'){
+    alert('Manager password hint: you told me the manager password earlier.');
+  } else {
+    alert('Admin is view-only. Contact the system owner.');
+  }
+});
+</script>
+</body>
+</html>

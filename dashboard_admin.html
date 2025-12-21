@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin Dashboard — Today's Qty</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- EmailJS -->
+  <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
+
+  <!-- Firebase compat SDK (works without bundler) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <style>
+    body{font-family:Segoe UI, sans-serif;background:#f5f7fb;margin:0;padding:0}
+    .topbar { background: linear-gradient(90deg,#1e3c72,#2a5298); color:#fff; padding:14px 20px; display:flex; justify-content:space-between; align-items:center;}
+    .topbar h1{margin:0;font-size:18px}
+    .topbar .btn{background:#fff;color:#1e3c72;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-weight:600}
+    .container{max-width:1100px;margin:22px auto;padding:16px}
+    .grid { display:grid; grid-template-columns: 1fr 380px; gap:18px; align-items:start; }
+    @media (max-width:960px){ .grid{grid-template-columns:1fr} }
+    .card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(0,0,0,0.08);margin-bottom:16px}
+    h3{color:#2a5298;margin:0 0 12px 0}
+    table{width:100%;border-collapse:collapse}
+    th, td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+    th{background:#f0f2f7;color:#1e3c72}
+    .history-list{max-height:300px;overflow:auto;padding:0;margin:0}
+    .history-list li{list-style:none;padding:8px 10px;margin-bottom:8px;border-radius:6px;background:#f7fbff;border-left:4px solid #2a5298}
+    .summary-box{background:#e8f0fe;padding:12px;border-radius:8px;margin-bottom:12px;border-left:5px solid #1e3c72;font-weight:600}
+    .small{font-size:0.9rem;color:#666}
+    .action-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+    .primary { background:#1e3c72;color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600 }
+    .secondary { background:#fff;color:#1e3c72;border:2px solid #1e3c72;padding:8px 12px;border-radius:8px;cursor:pointer }
+    #qtyChart { max-width:520px; max-height:360px; }
+    .download-link{display:inline-block;margin-top:8px;color:#1e3c72}
+    .note { font-size:0.85rem;color:#555;margin-top:8px }
+    input[type="email"], textarea { padding:8px;border-radius:6px;border:1px solid #ddd; width:100% }
+    .status { margin-top:8px; font-size:0.9rem; color:#444 }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <h1>🧾 Admin Dashboard — Today's Qty</h1>
+    <div>
+      <button class="btn" onclick="location.href='dashboard_manager.html'">Open Manager</button>
+      <button class="btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="summary-box" id="totalValueBox">Total Stock Value (₹): <span id="totalValue">0</span></div>
+
+    <div class="grid">
+      <!-- LEFT -->
+      <div>
+
+        <div class="card">
+          <h3>📦 Stock Report</h3>
+          <div id="stockAlert" class="small" style="display:none;padding:10px;background:#fff7e6;border-left:5px solid #f3c623;border-radius:6px;margin-bottom:10px"></div>
+          <div id="stockTableWrap"></div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <h3>📊 Today's Sales — Quantity (Pie)</h3>
+          <div class="note">Chart shows only sales recorded today (local date).</div>
+
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;align-items:center">
+            <canvas id="qtyChart" width="400" height="300"></canvas>
+          </div>
+
+          <div class="action-row">
+            <button class="primary" onclick="generateChartImage()">Generate Chart Image</button>
+            <a id="downloadLink" class="download-link" style="display:none" download>Download Chart Image</a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT -->
+      <div>
+
+        <div class="card">
+          <h3>📜 Activity History</h3>
+          <ul id="historyList" class="history-list"></ul>
+        </div>
+
+        <div class="card">
+          <h3>📧 Send Today's Sales (Text)</h3>
+          <div class="small">Email contains sales summary + recent updates.</div>
+
+          <input id="emailInput" type="email" placeholder="recipient@example.com" style="margin-top:10px" />
+          <textarea id="emailMessage" rows="3" placeholder="Optional message"></textarea>
+
+          <div class="action-row">
+            <button class="primary" onclick="sendReportByEmail()">Send Email</button>
+            <button class="secondary" onclick="downloadChartImage()">Download Image</button>
+            <button class="secondary" onclick="testEmailJS()">Test Email (Playground)</button>
+          </div>
+
+          <div id="sendStatus" class="status"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden canvas used to export chart image -->
+  <canvas id="exportCanvas" width="1200" height="500" style="display:none"></canvas>
+
+<script>
+/* =========================
+   CONFIG (edit only these)
+   ========================= */
+
+/* EmailJS settings (your provided values) */
+const EMAILJS_SERVICE = "service_hzvcp2k";
+const EMAILJS_TEMPLATE = "template_1wfoq6v";
+const EMAILJS_PUBLIC  = "jlMYmZVt81W2v3ZRR";
+
+/* Firebase config (your project's values) */
+const firebaseConfig = {
+  apiKey: "AIzaSyA9vga7dic8_gCqiWoT8l1ds2ONe8mGf6U",
+  authDomain: "store-manager-11.firebaseapp.com",
+  projectId: "store-manager-11",
+  storageBucket: "store-manager-11.firebasestorage.app",
+  messagingSenderId: "527705024026",
+  appId: "1:527705024026:web:25876af126ba42bef0d3a3"
+};
+
+/* =========================
+   END CONFIG
+   ========================= */
+
+/* Init EmailJS + Firebase */
+emailjs.init(EMAILJS_PUBLIC);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* Local state */
+let qtyChart = null;
+let lastChartDataUrl = null;
+
+/* -------------------------
+   Utility: Get local date string YYYY-MM-DD for comparison
+   (ensures timezone differences are handled)
+   ------------------------- */
+function toLocalISODate(d) {
+  const dt = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(dt)) return null;
+  const year = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2,'0');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  return `${year}-${mm}-${dd}`;
+}
+
+/* -------------------------
+   Render stock table (items collection)
+   ------------------------- */
+function renderStockTable(){
+  db.collection('items').get().then(snapshot=>{
+    const items = snapshot.docs.map(d=>({ id:d.id, ...d.data() }));
+    const wrap = document.getElementById('stockTableWrap');
+    if (!items.length){
+      wrap.innerHTML = "<p>No items found.</p>";
+      document.getElementById("totalValue").textContent = "0.00";
+      return;
+    }
+    let html = `<table><thead><tr>
+      <th>#</th><th>Item</th><th>Category</th><th>Qty</th><th>Price (₹)</th><th>Total (₹)</th>
+    </tr></thead><tbody>`;
+    let totalValue = 0;
+    items.forEach((it,i)=>{
+      const qty = Number(it.qty || 0);
+      const price = Number(it.price || 0);
+      const total = qty * price;
+      totalValue += total;
+      html += `<tr>
+        <td>${i+1}</td>
+        <td>${it.name||'-'}</td>
+        <td>${it.category||'-'}</td>
+        <td>${qty}</td>
+        <td>${price}</td>
+        <td>${total.toFixed(2)}</td>
+      </tr>`;
+    });
+    html += "</tbody></table>";
+    wrap.innerHTML = html;
+    document.getElementById("totalValue").textContent = totalValue.toFixed(2);
+  }).catch(err=>{
+    console.error("load items error:", err);
+    document.getElementById('stockTableWrap').innerHTML = "<p>Error loading items.</p>";
+  });
+}
+
+/* -------------------------
+   Render Activity History
+   - uses field "timestamp" (preferred) or falls back to last 20 docs
+   ------------------------- */
+function renderHistoryList(){
+  // try to order by timestamp (if present). If it fails, fetch with limit
+  db.collection('history')
+    .orderBy('timestamp', 'desc')
+    .limit(20)
+    .get()
+    .then(snap=>{
+      if (snap.empty) {
+        // maybe no timestamp field; fallback to simple list
+        return db.collection('history').limit(20).get();
+      }
+      return snap;
+    })
+    .then(snap=>{
+      const items = snap.docs.map(d => d.data());
+      const ul = document.getElementById('historyList');
+      if (!items.length) {
+        ul.innerHTML = "<li>No activity yet.</li>";
+        return;
+      }
+      ul.innerHTML = items.map(it => {
+        // prefer 'text' field (your screenshot showed 'text') else stringify
+        const text = it.text || it.message || JSON.stringify(it);
+        return `<li>${text}</li>`;
+      }).join('');
+    }).catch(err=>{
+      console.warn("history fetch err, trying fallback:", err);
+      // fallback: get docs (no order)
+      db.collection('history').limit(20).get().then(snap=>{
+        const items = snap.docs.map(d=>d.data());
+        const ul = document.getElementById('historyList');
+        if (!items.length) { ul.innerHTML = "<li>No activity yet.</li>"; return; }
+        ul.innerHTML = items.map(it => `<li>${it.text||JSON.stringify(it)}</li>`).join('');
+      }).catch(e=>{ console.error('history fallback error', e); });
+    });
+}
+
+/* -------------------------
+   Aggregate today's quantities
+   Accepts Firestore Timestamp, ISO string, or missing date
+   Uses local date (so timezone differences are minimized)
+   ------------------------- */
+function aggregateTodayQuantitiesFromDocs(docs){
+  const today = toLocalISODate(new Date());
+  const agg = {};
+  docs.forEach(doc => {
+    // doc may be a QueryDocumentSnapshot or a raw object
+    const data = (typeof doc.data === 'function') ? doc.data() : doc;
+    // pick date-like fields commonly used
+    let dateField = data.date || data.timestamp || data.time || data.createdAt || null;
+    let dateObj = null;
+    if (dateField && typeof dateField === 'object' && dateField.toDate) {
+      try { dateObj = dateField.toDate(); }
+      catch(e) { dateObj = null; }
+    } else if (typeof dateField === 'string') {
+      const parsed = new Date(dateField);
+      if (!isNaN(parsed)) dateObj = parsed;
+    } else if (!dateField) {
+      // no explicit date — if this doc's id encodes time or no option, skip or assume not today
+      dateObj = null;
+    }
+
+    const iso = dateObj ? toLocalISODate(dateObj) : null;
+    // if it matches today, include it
+    if (iso === today) {
+      const name = data.itemName || data.name || 'Unknown';
+      const qty = Number(data.qty || data.quantity || 0);
+      if (!agg[name]) agg[name] = 0;
+      agg[name] += qty;
+    }
+  });
+  return agg;
+}
+
+/* -------------------------
+   Render pie chart from aggregation object
+   ------------------------- */
+function renderQtyChart(agg){
+  const labels = Object.keys(agg).sort((a,b)=>agg[b]-agg[a]); // sort desc
+  const data = labels.map(l=>agg[l]);
+
+  const ctx = document.getElementById('qtyChart').getContext('2d');
+  if (qtyChart) qtyChart.destroy();
+
+  if (!labels.length) {
+    ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
+    ctx.font = "16px sans-serif";
+    ctx.fillStyle = "#666";
+    ctx.fillText("No sales today", 20, 40);
+    return;
+  }
+
+  qtyChart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: [
+          '#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc949','#af7aa1','#ff9da7','#9c755f','#bab0ac'
+        ].slice(0, labels.length)
+      }]
+    },
+    options: {
+      plugins: { legend: { position: 'right' } }
+    }
+  });
+}
+
+/* -------------------------
+   Subscribe to sales collection (real-time)
+   and update chart when sales change
+   ------------------------- */
+function subscribeSalesAndRender(){
+  db.collection('sales').onSnapshot(snap => {
+    const docs = snap.docs;
+    const agg = aggregateTodayQuantitiesFromDocs(docs);
+    renderQtyChart(agg);
+  }, err => {
+    console.error('sales listener err', err);
+    // fallback to one-time fetch
+    db.collection('sales').get().then(snap=>{
+      const agg = aggregateTodayQuantitiesFromDocs(snap.docs);
+      renderQtyChart(agg);
+    }).catch(e=>console.error('sales fetch fail', e));
+  });
+}
+
+/* -------------------------
+   Export chart image + download
+   ------------------------- */
+function generateChartImage(){
+  if (!qtyChart) return alert("No chart to export.");
+  const canvas = document.getElementById('qtyChart');
+  lastChartDataUrl = canvas.toDataURL('image/png');
+  const link = document.getElementById('downloadLink');
+  link.href = lastChartDataUrl;
+  link.style.display = "inline-block";
+  link.download = "today_qty_chart.png";
+  alert("Chart image ready. Click 'Download Chart Image' or Send Email.");
+}
+
+function downloadChartImage(){
+  if (!lastChartDataUrl && qtyChart) generateChartImage();
+  if (!lastChartDataUrl) return alert("No chart image available.");
+  const a = document.createElement('a');
+  a.href = lastChartDataUrl;
+  a.download = "today_qty_chart.png";
+  a.click();
+}
+
+/* -------------------------
+   Send report via EmailJS
+   - builds HTML summary table and optionally embeds chart image
+   - checks for required template variables and logs full response
+   ------------------------- */
+async function sendReportByEmail(){
+  const toEmail = document.getElementById('emailInput').value.trim();
+  const userMsg = document.getElementById('emailMessage').value.trim();
+  if (!toEmail) return alert('Enter recipient email.');
+
+  document.getElementById('sendStatus').innerText = "Preparing report...";
+
+  try {
+    // load today's sales docs
+    const snap = await db.collection('sales').get();
+    const agg = aggregateTodayQuantitiesFromDocs(snap.docs);
+
+    // build html
+    let html = `<p>${userMsg || "Today's sales report:"}</p>`;
+    const labels = Object.keys(agg);
+    if (!labels.length) {
+      html += "<p>No sales recorded today.</p>";
+    } else {
+      html += '<table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Item</th><th>Qty</th></tr>';
+      labels.forEach(l => {
+        html += `<tr><td>${l}</td><td style="text-align:right">${agg[l]}</td></tr>`;
+      });
+      html += '</table>';
+    }
+
+    // attach chart image (inline) if chart exists
+    if (qtyChart) {
+      try {
+        const c = document.getElementById('qtyChart');
+        const dataUrl = c.toDataURL('image/png');
+        html += `<p><img src="${dataUrl}" alt="Today's quantities" style="max-width:100%;height:auto" /></p>`;
+      } catch(e) {
+        console.warn("attach chart image failed:", e);
+      }
+    }
+
+    // prepare params for EmailJS - include conservative keys that typical templates use
+    const payload = {
+      to_email: toEmail,
+      subject: `Today's Sales Report`,
+      body_html: html,
+      from_name: 'Store Manager',
+      reply_to: 'no-reply@store.local'
+    };
+
+    document.getElementById('sendStatus').innerText = "Sending email...";
+    console.log("EmailJS payload:", payload);
+
+    // send and show response or error
+    const resp = await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, payload);
+    console.log('EmailJS success', resp);
+    document.getElementById('sendStatus').innerText = "Email sent!";
+    alert('Email sent successfully.');
+  } catch (err) {
+    console.error('sendReportByEmail error', err);
+    document.getElementById('sendStatus').innerText = "Email failed. See console for details.";
+    alert('Email failed. Open console (Ctrl+Shift+I) and paste the error here so I can help.');
+  }
+}
+
+/* Quick test function to open EmailJS playground (useful to verify the template) */
+function testEmailJS(){
+  // opens EmailJS template playground in a new tab
+  window.open('https://dashboard.emailjs.com/admin/templates', '_blank');
+}
+
+/* -------------------------
+   Init
+   ------------------------- */
+function logout(){ location.href="index.html"; }
+
+function init(){
+  renderStockTable();
+  renderHistoryList();
+  subscribeSalesAndRender();
+}
+
+init();
+</script>
+
+</body>
+</html>
