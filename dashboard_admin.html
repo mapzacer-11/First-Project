@@ -365,57 +365,49 @@ async function sendReportByEmail(){
   document.getElementById('sendStatus').innerText = "Preparing report...";
 
   try {
-    // load today's sales docs
+    // Load today's sales
     const snap = await db.collection('sales').get();
     const agg = aggregateTodayQuantitiesFromDocs(snap.docs);
 
-    // build html
+    // Build email HTML (TEXT + TABLE ONLY)
     let html = `<p>${userMsg || "Today's sales report:"}</p>`;
     const labels = Object.keys(agg);
+
     if (!labels.length) {
       html += "<p>No sales recorded today.</p>";
     } else {
-      html += '<table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Item</th><th>Qty</th></tr>';
+      html += `
+        <table border="1" cellpadding="6" style="border-collapse:collapse">
+          <tr>
+            <th>Item</th>
+            <th>Quantity</th>
+          </tr>`;
       labels.forEach(l => {
-        html += `<tr><td>${l}</td><td style="text-align:right">${agg[l]}</td></tr>`;
+        html += `<tr><td>${l}</td><td>${agg[l]}</td></tr>`;
       });
-      html += '</table>';
+      html += `</table>`;
     }
 
-    // attach chart image (inline) if chart exists
-    if (qtyChart) {
-      try {
-        const c = document.getElementById('qtyChart');
-        const dataUrl = c.toDataURL('image/png');
-        html += `<p><img src="${dataUrl}" alt="Today's quantities" style="max-width:100%;height:auto" /></p>`;
-      } catch(e) {
-        console.warn("attach chart image failed:", e);
-      }
-    }
-
-    // prepare params for EmailJS - include conservative keys that typical templates use
+    // EmailJS payload (SMALL & SAFE)
     const payload = {
       to_email: toEmail,
-      subject: `Today's Sales Report`,
-      body_html: html,
-      from_name: 'Store Manager',
-      reply_to: 'no-reply@store.local'
+      subject: "Today's Sales Report",
+      body_html: html
     };
 
     document.getElementById('sendStatus').innerText = "Sending email...";
-    console.log("EmailJS payload:", payload);
+    await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, payload);
 
-    // send and show response or error
-    const resp = await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, payload);
-    console.log('EmailJS success', resp);
-    document.getElementById('sendStatus').innerText = "Email sent!";
-    alert('Email sent successfully.');
+    document.getElementById('sendStatus').innerText = "Email sent successfully!";
+    alert("Email sent successfully.");
+
   } catch (err) {
     console.error('sendReportByEmail error', err);
-    document.getElementById('sendStatus').innerText = "Email failed. See console for details.";
-    alert('Email failed. Open console (Ctrl+Shift+I) and paste the error here so I can help.');
+    document.getElementById('sendStatus').innerText = "Email failed.";
+    alert("Email failed. Check console.");
   }
 }
+
 
 /* Quick test function to open EmailJS playground (useful to verify the template) */
 function testEmailJS(){
@@ -439,3 +431,4 @@ init();
 
 </body>
 </html>
+
